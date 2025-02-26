@@ -23,10 +23,10 @@ type CallSequence []*CallSequenceElement
 // AttachExecutionTraces takes a given chain which executed the call sequence, and a list of contract definitions,
 // and it replays each call of the sequence with an execution tracer attached to it, it then sets each
 // CallSequenceElement.ExecutionTrace to the resulting trace. Returns an error if one occurred.
-func (cs CallSequence) AttachExecutionTraces(chain *chain.TestChain, contractDefinitions fuzzingTypes.Contracts) error {
+func (cs CallSequence) AttachExecutionTraces(chain *chain.TestChain, contractDefinitions fuzzingTypes.Contracts, verbosity int) error {
 	// For each call sequence element, attach an execution trace.
 	for _, cse := range cs {
-		err := cse.AttachExecutionTrace(chain, contractDefinitions)
+		err := cse.AttachExecutionTrace(chain, contractDefinitions, verbosity)
 		if err != nil {
 			return err
 		}
@@ -294,7 +294,7 @@ func (cse *CallSequenceElement) String() string {
 // and it replays the call with an execution tracer attached to it, it then sets CallSequenceElement.ExecutionTrace to
 // the resulting trace.
 // Returns an error if one occurred.
-func (cse *CallSequenceElement) AttachExecutionTrace(chain *chain.TestChain, contractDefinitions fuzzingTypes.Contracts) error {
+func (cse *CallSequenceElement) AttachExecutionTrace(chain *chain.TestChain, contractDefinitions fuzzingTypes.Contracts, verbosity int) error {
 	// Verify the element has been executed before.
 	if cse.ChainReference == nil {
 		return fmt.Errorf("failed to resolve execution trace as the chain reference is nil, indicating the call sequence element has never been executed")
@@ -302,7 +302,7 @@ func (cse *CallSequenceElement) AttachExecutionTrace(chain *chain.TestChain, con
 
 	var err error
 	// Perform our call with the given trace
-	_, cse.ExecutionTrace, err = executiontracer.CallWithExecutionTrace(chain, contractDefinitions, cse.Call.ToCoreMessage(), nil)
+	_, cse.ExecutionTrace, err = executiontracer.CallWithExecutionTrace(chain, contractDefinitions, cse.Call.ToCoreMessage(), nil, verbosity)
 	if err != nil {
 		return fmt.Errorf("failed to resolve execution trace due to error replaying the call: %v", err)
 	}
