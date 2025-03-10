@@ -774,6 +774,9 @@ func (f *Fuzzer) Start() error {
 		return err
 	}
 
+	// Set the compilations in the corpus for coverage report generation
+	f.corpus.SetCompilations(f.compilations)
+
 	// Initialize our metrics and valueGenerator.
 	f.metrics = newFuzzerMetrics(f.config.Fuzzing.Workers)
 

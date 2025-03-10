@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/crytic/medusa/chain"
+	compilationTypes "github.com/crytic/medusa/compilation/types"
 	"github.com/crytic/medusa/fuzzing/calls"
 	"github.com/crytic/medusa/fuzzing/coverage"
 	"github.com/crytic/medusa/logging"
@@ -54,6 +55,9 @@ type Corpus struct {
 
 	// logger describes the Corpus's log object that can be used to log important events
 	logger *logging.Logger
+
+	// compilations stores the contract compilations for generating coverage reports
+	compilations []compilationTypes.Compilation
 }
 
 // NewCorpus initializes a new Corpus object, reading artifacts from the provided directory. If the directory refers
@@ -386,6 +390,41 @@ func (c *Corpus) Initialize(baseTestChain *chain.TestChain, contractDefinitions 
 	return corpusSequencesActive, corpusSequencesTotal, nil
 }
 
+// SetCompilations sets the compilations that will be used for coverage report generation
+func (c *Corpus) SetCompilations(compilations []compilationTypes.Compilation) {
+	c.compilations = compilations
+}
+
+// generateCoverageReport creates a coverage report for the current state of coverage maps
+func (c *Corpus) generateCoverageReport(corpusFilename string) error {
+	// Skip if no compilations are set or no corpus directory
+	if len(c.compilations) == 0 || c.storageDirectory == "" {
+		return nil
+	}
+
+	// Get coverage analysis
+	sourceAnalysis, err := coverage.AnalyzeSourceCoverage(c.compilations, c.coverageMaps)
+	if err != nil {
+		return fmt.Errorf("failed to analyze coverage for corpus %s: %v", corpusFilename, err)
+	}
+
+	// Base coverage report directory
+	coverageReportDir := filepath.Join(c.storageDirectory, "coverage")
+
+	err = utils.MakeDirectory(coverageReportDir)
+	if err != nil {
+		return err
+	}
+
+	// Generate JSON coverage data
+	_, err = coverage.WriteJSONCoverageData(sourceAnalysis, coverageReportDir)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // addCallSequence adds a call sequence to the corpus in a given corpus directory.
 // Returns an error, if one occurs.
 func (c *Corpus) addCallSequence(sequenceFiles *corpusDirectory[calls.CallSequence], sequence calls.CallSequence, useInMutations bool, mutationChooserWeight *big.Int, flushImmediately bool) error {
@@ -427,6 +466,15 @@ func (c *Corpus) addCallSequence(sequenceFiles *corpusDirectory[calls.CallSequen
 			mutationChooserWeight = big.NewInt(1)
 		}
 		c.mutationTargetSequenceChooser.AddChoices(randomutils.NewWeightedRandomChoice[calls.CallSequence](sequence, mutationChooserWeight))
+
+		// Generate a coverage report for this new corpus item
+		if c.storageDirectory != "" {
+			// Don't fail the fuzzing process if report generation fails
+			reportErr := c.generateCoverageReport(fileName)
+			if reportErr != nil {
+				c.logger.Warn("Failed to generate coverage report", reportErr)
+			}
+		}
 	}
 
 	// Unlock now, as flushing will lock on its own.

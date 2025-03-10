@@ -2,6 +2,7 @@ package coverage
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"math"
@@ -17,6 +18,42 @@ var (
 	//go:embed report_template.gohtml
 	htmlReportTemplate []byte
 )
+
+// LineCoverageData represents coverage data for a specific line
+type LineCoverageData struct {
+	Line    int  `json:"line"`
+	Revert  uint `json:"revert"`
+	Success uint `json:"success"`
+}
+
+// CoverageReport represents the overall coverage report data structure
+type CoverageReport map[string][]LineCoverageData
+
+// GenerateJSONCoverageData takes a source analysis and generates JSON coverage data
+func GenerateJSONCoverageData(sourceAnalysis *SourceAnalysis) ([]byte, error) {
+	report := make(CoverageReport)
+
+	for _, sourceFile := range sourceAnalysis.SortedFiles() {
+		lineCoverageData := make([]LineCoverageData, 0)
+
+		for lineIndex, line := range sourceFile.Lines {
+			// Only include active lines that have coverage information
+			if line.IsActive {
+				lineData := LineCoverageData{
+					Line:    lineIndex + 1, // Convert to 1-based line number
+					Revert:  line.RevertHitCount,
+					Success: line.SuccessHitCount,
+				}
+				lineCoverageData = append(lineCoverageData, lineData)
+			}
+		}
+
+		report[sourceFile.Path] = lineCoverageData
+	}
+
+	// Marshal the data into JSON
+	return json.MarshalIndent(report, "", "  ")
+}
 
 // WriteHTMLReport takes a previously performed source analysis and generates an HTML coverage report from it.
 func WriteHTMLReport(sourceAnalysis *SourceAnalysis, reportDir string) (string, error) {
@@ -106,4 +143,29 @@ func WriteLCOVReport(sourceAnalysis *SourceAnalysis, reportDir string) (string, 
 	}
 
 	return lcovReportPath, nil
+}
+
+// WriteJSONCoverageData writes the JSON coverage data to a file
+func WriteJSONCoverageData(sourceAnalysis *SourceAnalysis, reportDir string) (string, error) {
+	// Generate the JSON coverage data
+	jsonData, err := GenerateJSONCoverageData(sourceAnalysis)
+	if err != nil {
+		return "", fmt.Errorf("could not generate JSON coverage data: %v", err)
+	}
+
+	// If the directory doesn't exist, create it.
+	err = utils.MakeDirectory(reportDir)
+	if err != nil {
+		return "", err
+	}
+
+	var jsonReportPath = filepath.Join(reportDir, "coverage.json")
+
+	// Write the JSON data to a file
+	err = os.WriteFile(jsonReportPath, jsonData, 0644)
+	if err != nil {
+		return "", fmt.Errorf("could not export JSON coverage data: %v", err)
+	}
+
+	return jsonReportPath, nil
 }
