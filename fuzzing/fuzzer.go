@@ -100,6 +100,9 @@ type Fuzzer struct {
 
 	// logger describes the Fuzzer's log object that can be used to log important events
 	logger *logging.Logger
+
+	// liveReportCancel is used to stop the live report generation goroutine
+	liveReportCancel chan struct{}
 }
 
 // NewFuzzer returns an instance of a new Fuzzer provided a project configuration, or an error if one is encountered
@@ -774,9 +777,6 @@ func (f *Fuzzer) Start() error {
 		return err
 	}
 
-	// Set the compilations in the corpus for coverage report generation
-	f.corpus.SetCompilations(f.compilations)
-
 	// Initialize our metrics and valueGenerator.
 	f.metrics = newFuzzerMetrics(f.config.Fuzzing.Workers)
 
@@ -853,6 +853,20 @@ func (f *Fuzzer) Start() error {
 		return err
 	}
 
+	// Determine coverage report directory
+	coverageReportDir := filepath.Join("crytic-export", "coverage")
+	if f.config.Fuzzing.CorpusDirectory != "" {
+		coverageReportDir = filepath.Join(f.config.Fuzzing.CorpusDirectory, "coverage")
+	}
+
+	// Create coverage directory if needed
+	if err := utils.MakeDirectory(coverageReportDir); err != nil {
+		return fmt.Errorf("failed to create coverage directory: %v", err)
+	}
+
+	// Start live report worker if enabled
+	f.startLiveReportWorker(coverageReportDir)
+
 	// Run the main worker loop
 	err = f.spawnWorkersLoop(baseTestChain)
 	if err != nil {
@@ -921,6 +935,11 @@ func (f *Fuzzer) Start() error {
 // shrink some call sequences before the thread is torn down. Stop will not prevent those shrink requests from
 // executing. An OS-level interrupt must be used to guarantee the stopping of _all_ operations (see Terminate).
 func (f *Fuzzer) Stop() {
+	// Stop live report worker if running
+	if f.liveReportCancel != nil {
+		close(f.liveReportCancel)
+	}
+
 	// Call the cancel function on our main running context to try stop all working goroutines
 	if f.ctxCancelFunc != nil {
 		f.ctxCancelFunc()
@@ -1053,4 +1072,48 @@ func (f *Fuzzer) printExitingResults() {
 
 	// Print our final tally of test statuses.
 	f.logger.Info("Test summary: ", colors.GreenBold, testCountPassed, colors.Reset, " test(s) passed, ", colors.RedBold, testCountFailed, colors.Reset, " test(s) failed")
+}
+
+// startLiveReportWorker starts a goroutine that periodically generates coverage reports
+func (f *Fuzzer) startLiveReportWorker(coverageReportDir string) {
+	if !f.config.Fuzzing.LiveReport {
+		return
+	}
+
+	f.liveReportCancel = make(chan struct{})
+
+	go func() {
+		ticker := time.NewTicker(time.Duration(f.config.Fuzzing.LiveReportInterval) * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// Generate coverage report
+				sourceAnalysis, err := coverage.AnalyzeSourceCoverage(f.compilations, f.corpus.CoverageMaps())
+				if err != nil {
+					f.logger.Debug("Failed to analyze coverage for live report", err)
+					continue
+				}
+
+				// Generate and write JSON data
+				jsonData, err := coverage.GenerateJSONCoverageData(sourceAnalysis)
+				if err != nil {
+					f.logger.Debug("Failed to generate JSON coverage data for live report", err)
+					continue
+				}
+
+				jsonPath := filepath.Join(coverageReportDir, "coverage.json")
+				err = os.WriteFile(jsonPath, jsonData, 0644)
+				if err != nil {
+					f.logger.Debug("Failed to write JSON coverage data for live report", err)
+				}
+
+			case <-f.liveReportCancel:
+				return
+			case <-f.ctx.Done():
+				return
+			}
+		}
+	}()
 }

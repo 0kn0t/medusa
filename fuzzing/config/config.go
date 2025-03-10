@@ -62,6 +62,12 @@ type FuzzingConfig struct {
 	// CoverageEnabled describes whether to use coverage-guided fuzzing
 	CoverageEnabled bool `json:"coverageEnabled"`
 
+	// LiveReport enables periodic generation of coverage reports during fuzzing
+	LiveReport bool `json:"liveReport"`
+
+	// LiveReportInterval is the interval in seconds between live coverage report generation
+	LiveReportInterval int `json:"liveReportInterval"`
+
 	// CoverageFormats indicate which reports to generate: "lcov" and "html" are supported.
 	CoverageFormats []string `json:"coverageFormats"`
 

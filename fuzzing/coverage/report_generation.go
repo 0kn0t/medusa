@@ -24,6 +24,7 @@ type LineCoverageData struct {
 	Line    int  `json:"line"`
 	Revert  uint `json:"revert"`
 	Success uint `json:"success"`
+	IsCovered bool `json:"isCovered"`
 }
 
 // CoverageReport represents the overall coverage report data structure
@@ -43,6 +44,7 @@ func GenerateJSONCoverageData(sourceAnalysis *SourceAnalysis) ([]byte, error) {
 					Line:    lineIndex + 1, // Convert to 1-based line number
 					Revert:  line.RevertHitCount,
 					Success: line.SuccessHitCount,
+					IsCovered: line.IsCovered || line.IsCoveredReverted,
 				}
 				lineCoverageData = append(lineCoverageData, lineData)
 			}

@@ -52,6 +52,8 @@ func GetDefaultProjectConfig(platform string) (*ProjectConfig, error) {
 			ConstructorArgs:         map[string]map[string]any{},
 			CorpusDirectory:         "",
 			CoverageEnabled:         true,
+			LiveReport:              false,
+			LiveReportInterval:      10,
 			CoverageFormats:         []string{"html", "lcov"},
 			SenderAddresses: []string{
 				"0x10000",
